@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iteratio</title>
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#020b1e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Iteratio">
+<meta name="description" content="Iteratio — Streaming de películas y series">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<!-- Plyr — reproductor de video premium para contenido R2 -->
+<link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
+</head>
+<body>
+
+<!-- AUTH -->
+<div id="authScreen">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <img src="logo-iteratio.svg" alt="Iteratio" class="auth-logo-img">
+      <p class="auth-logo-sub">Inicia sesión para acceder al catálogo</p>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabLogin" onclick="switchTab('login')">Iniciar sesión</button>
+      <button class="auth-tab" id="tabRegister" onclick="switchTab('register')">Registrarse</button>
+    </div>
+    <form class="auth-form" id="formLogin" onsubmit="handleLogin(event)">
+      <div class="auth-field">
+        <label for="loginEmail">Correo electrónico</label>
+        <input type="email" id="loginEmail" placeholder="tucorreo@ejemplo.com" autocomplete="email" required>
+      </div>
+      <div class="auth-field">
+        <label for="loginPassword">Contraseña</label>
+        <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="auth-submit" id="btnLogin">Entrar</button>
+      <div class="auth-message" id="loginMsg"></div>
+    </form>
+    <form class="auth-form hidden" id="formRegister" onsubmit="handleRegister(event)">
+      <div class="auth-field">
+        <label for="regName">Nombre completo</label>
+        <input type="text" id="regName" placeholder="Juan Pérez" autocomplete="name" required>
+      </div>
+      <div class="auth-field">
+        <label for="regEmail">Correo electrónico</label>
+        <input type="email" id="regEmail" placeholder="tucorreo@ejemplo.com" autocomplete="email" required>
+      </div>
+      <div class="auth-field">
+        <label for="regPassword">Contraseña</label>
+        <input type="password" id="regPassword" placeholder="Mínimo 6 caracteres" autocomplete="new-password" minlength="6" required>
+      </div>
+      <button type="submit" class="auth-submit" id="btnRegister">Solicitar acceso</button>
+      <div class="auth-message" id="registerMsg"></div>
+    </form>
+  </div>
+</div>
+
+<!-- SELECTOR DE PERFILES -->
+<div id="profileSelector" class="profile-selector hidden">
+  <div class="profile-selector-box">
+    <div class="profile-selector-logo">
+      <img src="logo-iteratio.svg" alt="Iteratio" class="profile-selector-logo-img">
+    </div>
+    <h2 class="profile-selector-title" id="profileSelectorTitle">¿Quién está viendo?</h2>
+    <div class="profile-avatars-grid" id="profileAvatarsGrid"></div>
+    <div id="profileSelectorDoneWrap" class="profile-done-wrap hidden">
+      <button class="profile-manage-btn" onclick="exitEditMode()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:middle;margin-right:5px"><polyline points="20 6 9 17 4 12"/></svg>
+        Listo
+      </button>
+    </div>
+    <button class="profile-manage-btn" id="profileSelectorManageBtn" onclick="enterEditMode()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:middle;margin-right:5px"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+      EDITAR PERFILES
+    </button>
+  </div>
+</div>
+
+<!-- MODAL PERFIL
+     Estructura de botones (de arriba a abajo en la sección de acciones):
+     1. #profileFormSaveBtn  — botón principal: "Crear perfil" | "Guardar cambios"
+     2. #profileFormDeleteBtn — botón peligro rojo (solo perfiles secundarios en edición)
+                                Al pulsar → triggerDeleteConfirm() lo transforma en
+                                "Sí, eliminar" y muestra el botón de cancelar.
+     3. #profileFormConfirmDeleteBtn — botón "Cancelar" (oculto por defecto)
+                                       Al pulsar → restoreDeleteBtn()
+     4. #profileFormMsg — área de mensajes de feedback
+-->
+<div id="profileFormModal" class="account-modal-overlay hidden">
+  <div class="account-modal-box" style="max-width:420px">
+    <div class="account-modal-header">
+      <h2 class="account-modal-title" id="profileFormTitle">Perfil</h2>
+      <button class="account-modal-close" onclick="closeProfileFormModalClean()" aria-label="Cerrar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="account-section" id="profileFormFields">
+      <div class="auth-field">
+        <label class="account-label" for="profileFormName">Nombre del perfil</label>
+        <input type="text" id="profileFormName" class="account-input" placeholder="Ej: Juan" maxlength="20">
+      </div>
+      <div class="auth-field">
+        <label class="account-label" for="profileFormAvatarUrl">URL del avatar (opcional)</label>
+        <input type="url" id="profileFormAvatarUrl" class="account-input" placeholder="https://...">
+      </div>
+    </div>
+    <div class="account-section profile-form-actions-section">
+      <!-- Botón principal: texto dinámico según modo -->
+      <button class="account-btn-primary" id="profileFormSaveBtn" onclick="handleProfileFormSave()">Guardar</button>
+      <!-- Botón eliminar: solo visible en modo edición de perfil secundario -->
+      <button class="account-btn-danger" id="profileFormDeleteBtn" style="display:none" onclick="triggerDeleteConfirm()">Eliminar perfil</button>
+      <!-- Botón cancelar confirmación: oculto por defecto, aparece en fase de confirm -->
+      <button class="account-btn-ghost" id="profileFormConfirmDeleteBtn" style="display:none" onclick="restoreDeleteBtn()">Cancelar</button>
+      <div class="account-message" id="profileFormMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header id="appHeader" class="hidden">
+
+  <!-- Fila 1: logo + búsqueda + avatar -->
+  <div class="header-top-row">
+    <div class="logo">
+      <img src="logo-iteratio.svg" alt="Iteratio" class="header-logo-img">
+    </div>
+
+    <div class="header-right">
+      <div class="search-toggle-wrap" id="searchToggleWrap">
+        <input type="text" id="searchInput" class="search-input-collapsed"
+               placeholder="Buscar título, director…" autocomplete="off" spellcheck="false">
+        <button class="search-icon-btn" onclick="toggleSearch()" aria-label="Buscar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </button>
+      </div>
+
+      <div id="userBar">
+        <div class="user-avatar" id="userAvatar" onclick="toggleDropdown()"
+             role="button" aria-haspopup="true" aria-expanded="false" aria-label="Menu de usuario">
+          <img id="userAvatarImg" src="" alt=""
+               style="display:none;width:100%;height:100%;object-fit:cover;border-radius:50%;">
+          <span id="userAvatarInitial">?</span>
+        </div>
+        <div class="user-dropdown" id="userDropdown" role="menu">
+          <div class="dropdown-section" id="dropdownProfilesList"></div>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-btn" onclick="goToEditProfiles()" role="menuitem">
+            <span class="dropdown-btn-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+            </span> Editar perfiles
+          </button>
+          <button class="dropdown-btn" onclick="openAccountModal('seguridad')" role="menuitem">
+            <span class="dropdown-btn-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </span> Cuenta
+          </button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-btn danger" onclick="handleLogout()" role="menuitem">
+            <span class="dropdown-btn-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            </span> Cerrar sesión
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fila 2: nav tabs — siempre visibles, scrollables en móvil -->
+  <nav class="nav-tabs" id="navTabs">
+    <button class="nav-tab active" data-tab="inicio"    onclick="switchNavTab('inicio')">Inicio</button>
+    <button class="nav-tab"        data-tab="series"    onclick="switchNavTab('series')">Series</button>
+    <button class="nav-tab"        data-tab="peliculas" onclick="switchNavTab('peliculas')">Películas</button>
+    <button class="nav-tab"        data-tab="generos"   onclick="switchNavTab('generos')">Géneros</button>
+    <button class="nav-tab"        data-tab="milista"   onclick="switchNavTab('milista')">Mi Lista</button>
+  </nav>
+
+</header>
+
+<!-- BANNER DESTACADO -->
+<div id="featuredBanner" class="featured-banner hidden">
+  <div class="banner-bg" id="bannerBg"></div>
+  <div class="banner-overlay"></div>
+  <div class="banner-content">
+    <div class="banner-badge" id="bannerBadge"></div>
+    <h1 class="banner-title" id="bannerTitle"></h1>
+    <div class="banner-meta" id="bannerMeta"></div>
+    <p class="banner-desc" id="bannerDesc"></p>
+    <div class="banner-actions">
+      <button class="banner-btn-play" onclick="bannerPlay()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Reproducir
+      </button>
+      <!-- Desktop: "Más información" | Móvil: oculto por CSS, se muestra "+ Mi lista" -->
+      <button class="banner-btn-info banner-btn-info-desktop" onclick="bannerInfo()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Más información
+      </button>
+      <!-- Solo visible en móvil -->
+      <button class="banner-btn-info banner-btn-milista" id="bannerMiListaBtn" onclick="bannerToggleFavorite()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" id="bannerMiListaIcon"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span id="bannerMiListaText">+ Mi lista</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- HUB DE GENEROS -->
+<div id="genreHub" class="genre-hub hidden">
+  <div class="genre-hub-header">
+    <h2 class="genre-hub-title">Géneros</h2>
+    <p class="genre-hub-subtitle">Elige una categoría para explorar el catálogo.</p>
+  </div>
+  <div class="genre-hub-grid" id="genreHubGrid"></div>
+</div>
+
+<!-- VISTA DE DETALLE A PANTALLA COMPLETA -->
+<div id="detailView" class="detail-view hidden">
+  <div class="detail-bg" id="detailBg"></div>
+  <div class="detail-overlay"></div>
+
+  <button class="detail-back-btn" onclick="closeDetailView()">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+    Volver
+  </button>
+
+  <div class="detail-content">
+    <div class="detail-meta-top">
+      <div class="detail-genre-tag" id="detailGenreTag"></div>
+      <div class="detail-type-badge" id="detailTypeBadge"></div>
+    </div>
+
+    <h1 class="detail-title" id="detailTitle"></h1>
+
+    <div class="detail-meta-row">
+      <span class="detail-meta-pill" id="detailYear"></span>
+      <span class="detail-meta-pill" id="detailDuration"></span>
+      <span class="detail-meta-pill rating-pill" id="detailRating"></span>
+      <span class="detail-meta-pill" id="detailDirector"></span>
+    </div>
+
+    <div class="detail-genre-tags" id="detailGenreTags"></div>
+
+    <p class="detail-synopsis" id="detailSynopsis"></p>
+
+    <!-- Acciones: Reproducir (solo películas) + Mi Lista (siempre) -->
+    <div class="detail-actions">
+      <button class="detail-btn-play" id="detailPlayBtn" onclick="openDetailPlayer()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="flex-shrink:0"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Reproducir
+      </button>
+      <button class="detail-btn-favorite" id="detailFavoriteBtn" onclick="toggleDetailFavorite()">
+        <span id="detailFavIcon">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </span>
+        <span id="detailFavText">Mi Lista</span>
+      </button>
+    </div>
+
+  </div><!-- /detail-content -->
+
+  <!-- Barra de tabs FUERA del detail-content para ocupar 100% del ancho -->
+  <div class="detail-tabs-wrap">
+    <div class="detail-tabs-bar" id="detailTabsBar">
+      <button class="detail-tab active" id="tabEpisodios" onclick="switchDetailTab('episodios')">Episodios</button>
+      <button class="detail-tab" id="tabRelacionado" onclick="switchDetailTab('relacionado')">Relacionado</button>
+    </div>
+  </div>
+
+  <!-- Paneles: dentro del detail-content-panels para respetar el padding -->
+  <div class="detail-panels">
+
+    <!-- Panel Episodios (solo series) -->
+    <div id="detailSeriesSection" class="detail-series-section hidden">
+      <div class="series-season-row">
+        <select id="detailSeasonSelect" class="season-select" onchange="loadDetailEpisodes()"></select>
+      </div>
+      <div id="detailEpisodesList" class="episodes-list"></div>
+    </div>
+
+    <!-- Panel Relacionado (series y películas) -->
+    <div id="detailRelatedSection" class="detail-related-section hidden">
+      <div id="detailRelatedList" class="related-list"></div>
+    </div>
+
+  </div><!-- /detail-panels -->
+
+</div><!-- /detail-view -->
+
+<!-- ============================================================
+     ITERATIO PLAYER — Reproductor full-window HBO Max style
+     Modo R2 (Cloudflare): <video> con Plyr + controles premium
+     Modo Drive (legacy):   <iframe> + topbar básico Iteratio
+     ============================================================ -->
+<div id="iteratioPlayer" class="iteratio-player-hidden" aria-label="Reproductor Iteratio">
+
+  <!-- Capa de toque: tap central para mostrar/ocultar controles -->
+  <div id="iteratioTapLayer" onclick="itPlayerTapToggle(event)"></div>
+
+  <!-- ── BARRA SUPERIOR ─────────────────────────────────────── -->
+  <div id="iteratioTopbar">
+    <!-- Izquierda: botón Volver -->
+    <button id="iteratioBackBtn" class="itp-back-btn" onclick="closeIteratioPlayer()" aria-label="Volver">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+      Volver
+    </button>
+
+    <!-- Centro: título + indicador episodio (si es serie) -->
+    <div class="itp-title-block">
+      <span id="iteratioTitle" class="itp-title"></span>
+      <span id="iteratioEpBadge" class="itp-ep-badge"></span>
+    </div>
+
+    <!-- Derecha: AirPlay · Cast · Subtítulos/Audio -->
+    <div class="itp-topbar-right">
+      <!-- AirPlay (solo Safari/iOS) -->
+      <button id="iteratioAirPlayBtn" class="itp-icon-btn itp-hidden" onclick="itPlayerAirPlay()" title="AirPlay" aria-label="AirPlay">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+          <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+          <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+          <line x1="12" y1="20" x2="12" y2="20"/>
+          <polyline points="9 21 12 18 15 21"/>
+        </svg>
+      </button>
+      <!-- Cast / Chromecast -->
+      <button id="iteratioCastBtn" class="itp-icon-btn itp-hidden" title="Transmitir" aria-label="Transmitir">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 8.5A12.5 12.5 0 0 1 14.5 21"/>
+          <path d="M2 12.5A8.5 8.5 0 0 1 10.5 21"/>
+          <circle cx="2" cy="21" r="1" fill="currentColor"/>
+          <path d="M2 4.5A16.5 16.5 0 0 1 18.5 21"/>
+          <rect x="15" y="3" width="9" height="7" rx="1"/>
+          <polyline points="15 7 12 10 12 17"/>
+        </svg>
+      </button>
+      <!-- Subtítulos / Audio (CC) -->
+      <button id="iteratioCCBtn" class="itp-icon-btn" onclick="itPlayerCCToggle()" title="Subtítulos" aria-label="Subtítulos">
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="5" width="20" height="14" rx="2"/>
+          <path d="M7 15h4M15 15h2M7 11h2M13 11h4"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── CONTROLES CENTRALES: skip · play/pause · skip ─────── -->
+  <div id="iteratioCenterControls">
+    <button class="itp-skip-btn" onclick="itPlayerSkip(-10)" aria-label="Retroceder 10 segundos">
+      <!-- Skip-back 10 -->
+      <svg viewBox="0 0 56 56" width="52" height="52">
+        <circle cx="28" cy="28" r="26" fill="rgba(0,0,0,.35)" stroke="rgba(255,255,255,.25)" stroke-width="1.5"/>
+        <path d="M34 19.5 A11 11 0 1 0 41 28" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+        <polyline points="30,15 34,19.5 29.5,24" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="28" y="34" text-anchor="middle" font-size="10" fill="white" font-family="'Poppins',sans-serif" font-weight="700">10</text>
+      </svg>
+    </button>
+
+    <button id="iteratioPlayBtn" class="itp-play-btn" onclick="itPlayerPlayPause()" aria-label="Reproducir / Pausar">
+      <svg id="iteratioPlayIcon" viewBox="0 0 24 24" width="44" height="44" fill="white" stroke="none">
+        <polygon points="6 3 20 12 6 21 6 3"/>
+      </svg>
+    </button>
+
+    <button class="itp-skip-btn" onclick="itPlayerSkip(10)" aria-label="Adelantar 10 segundos">
+      <!-- Skip-forward 10 -->
+      <svg viewBox="0 0 56 56" width="52" height="52">
+        <circle cx="28" cy="28" r="26" fill="rgba(0,0,0,.35)" stroke="rgba(255,255,255,.25)" stroke-width="1.5"/>
+        <path d="M22 19.5 A11 11 0 1 1 15 28" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+        <polyline points="26,15 22,19.5 26.5,24" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="28" y="34" text-anchor="middle" font-size="10" fill="white" font-family="'Poppins',sans-serif" font-weight="700">10</text>
+      </svg>
+    </button>
+  </div>
+
+  <!-- ── BARRA INFERIOR ─────────────────────────────────────── -->
+  <div id="iteratioBottombar">
+    <!-- Info del contenido: título + "Temporada X • Episodio X" -->
+    <div class="itp-content-info">
+      <span id="iteratioBottomTitle" class="itp-bottom-title"></span>
+      <span id="iteratioSeasonEp"    class="itp-season-ep"></span>
+    </div>
+
+    <!-- Barra de progreso con thumb deslizable -->
+    <div class="itp-progress-wrap">
+      <span id="itpBufferBar"   class="itp-buffer-bar"></span>
+      <span id="itpProgressBar" class="itp-progress-bar"></span>
+      <input id="iteratioSeekbar" class="itp-seekbar" type="range"
+             min="0" max="100" value="0" step="0.05"
+             oninput="itPlayerSeek(this.value)"
+             aria-label="Barra de progreso">
+    </div>
+
+    <!-- Tiempo restante (contador inverso: -1:24:03) -->
+    <div class="itp-time-remaining" id="iteratioTimeRemaining">-0:00</div>
+  </div>
+
+  <!-- ── MEDIA ELEMENTS ─────────────────────────────────────── -->
+  <!-- R2 / nativo: <video> con Plyr -->
+  <video id="iteratioVideo"
+         class="itp-video"
+         preload="metadata"
+         crossorigin="anonymous"
+         playsinline>
+  </video>
+
+  <!-- Drive legacy: <iframe> sin controles propios -->
+  <iframe id="iteratioIframe"
+          class="itp-iframe itp-hidden"
+          allowfullscreen
+          allow="autoplay; fullscreen">
+  </iframe>
+
+</div>
+
+<!-- LAYOUT CATALOGO -->
+<div class="page-wrapper hidden" id="pageWrapper">
+  <div class="content-area full-width">
+    <div id="grid"></div>
+  </div>
+</div>
+
+<!-- MODAL CUENTA: solo Seguridad y Dispositivos -->
+<div id="accountModal" role="dialog" aria-modal="true" class="account-modal-overlay hidden">
+  <div class="account-modal-box">
+    <div class="account-modal-header">
+      <h2 class="account-modal-title">Mi Cuenta</h2>
+      <button class="account-modal-close" onclick="closeAccountModal()" aria-label="Cerrar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="account-tabs">
+      <button class="account-tab active" data-tab="seguridad"    onclick="switchAccountTab('seguridad')">Seguridad</button>
+      <button class="account-tab"        data-tab="dispositivos" onclick="switchAccountTab('dispositivos')">Dispositivos</button>
+    </div>
+
+    <div class="account-tab-content active" id="tab-seguridad">
+      <div class="account-section" id="securityViewMode">
+        <div class="account-field-group">
+          <label class="account-label">Correo electrónico</label>
+          <div class="account-value" id="accountEmail">-</div>
+        </div>
+        <div class="account-field-group">
+          <label class="account-label">Contraseña</label>
+          <div class="password-preview-row">
+            <span class="password-dots">••••••••••</span>
+            <button class="password-edit-btn" onclick="showPasswordForm()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:middle;margin-right:4px"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+              Editar
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="account-section hidden" id="securityEditMode">
+        <h3 class="password-form-title">Cambiar contraseña</h3>
+        <div class="auth-field">
+          <label class="account-label" for="newPasswordInput">Nueva contraseña</label>
+          <div class="password-input-wrap">
+            <input type="password" id="newPasswordInput" class="account-input"
+                   placeholder="Mínimo 6 caracteres" minlength="6" autocomplete="new-password">
+            <button type="button" class="eye-btn"
+                    onclick="togglePasswordVisibility('newPasswordInput',this)">
+              <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="auth-field">
+          <label class="account-label" for="confirmPasswordInput">Confirmar contraseña</label>
+          <div class="password-input-wrap">
+            <input type="password" id="confirmPasswordInput" class="account-input"
+                   placeholder="Repite la contraseña" minlength="6" autocomplete="new-password">
+            <button type="button" class="eye-btn"
+                    onclick="togglePasswordVisibility('confirmPasswordInput',this)">
+              <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="password-form-actions">
+          <button class="account-btn-primary" onclick="changePassword()">Actualizar contraseña</button>
+          <button class="account-btn-ghost" onclick="hidePasswordForm()">Cancelar</button>
+        </div>
+        <div class="account-message" id="passwordMsg"></div>
+      </div>
+    </div>
+
+    <div class="account-tab-content" id="tab-dispositivos">
+      <div class="account-section">
+        <p class="account-desc">Pantallas activas en tu cuenta.</p>
+        <div class="devices-info">
+          <div class="devices-count-wrap">
+            <span class="devices-count" id="devicesCount">-</span>
+            <span class="devices-label">de 3 pantallas en uso</span>
+          </div>
+          <div class="devices-bar"><div class="devices-bar-fill" id="devicesBarFill"></div></div>
+        </div>
+        <p class="account-desc-small">Si sospechas de acceso no autorizado, cierra sesión en todos los dispositivos.</p>
+        <button class="account-btn-danger" onclick="logoutAllDevices()">Cerrar sesión en todos los dispositivos</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL LIMITE PANTALLAS -->
+<div id="screenLimitModal" class="screen-limit-overlay hidden">
+  <div class="screen-limit-box">
+    <div class="screen-limit-icon">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent-celeste)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    </div>
+    <h3 class="screen-limit-title">Límite de pantallas alcanzado</h3>
+    <p class="screen-limit-msg">Has alcanzado el límite máximo de <strong>3 pantallas simultáneas</strong>. Cierra la reproducción en otro dispositivo para continuar.</p>
+    <button class="auth-submit" onclick="closeScreenLimitModal()">Entendido</button>
+  </div>
+</div>
+
+<!-- Plyr JS -->
+<script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+<script src="script.js" defer></script>
+
+<!-- Registro del Service Worker (PWA — solo en producción, no en localhost) -->
+<script>
+  if ('serviceWorker' in navigator && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker
+        .register('/sw.js', { scope: '/' })
+        .then(function (reg) {
+          console.log('[SW] Registrado. Scope:', reg.scope);
+          reg.addEventListener('updatefound', function () {
+            const newWorker = reg.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener('statechange', function () {
+              if (newWorker.state === 'installed') {
+                if (navigator.serviceWorker.controller) {
+                  newWorker.postMessage({ type: 'SKIP_WAITING' });
+                  navigator.serviceWorker.addEventListener('controllerchange', function () {
+                    window.location.reload();
+                  });
+                }
+              }
+            });
+          });
+        })
+        .catch(function (err) {
+          console.warn('[SW] Error al registrar:', err);
+        });
+    });
+  }
+</script>
+</body>
+</html>
