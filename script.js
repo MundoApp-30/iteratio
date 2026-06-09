@@ -1234,33 +1234,41 @@ async function loadDetailEpisodes() {
 
 
 // ================================================================
-// ITERATIO PLAYER
-// Lógica de retrocompatibilidad:
-//   URL contiene 'r2.dev'          → Plyr nativo (controles premium)
-//   URL contiene 'drive.google.com' → iframe legacy (sin controles)
-//   Cualquier otra URL              → <video> nativo sin Plyr
+// ITERATIO PLAYER — Reproductor Cloudflare R2 + Plyr
+// Toda reproducción usa <video> nativo con Plyr sobre R2.
+// URLs soportadas:
+//   https://media.iteratio.com/pelicula-2023.mp4  (URL completa R2)
+//   pelicula-2023.mp4                              (nombre relativo → R2)
+//   https://xxxx.r2.dev/...                        (URL pública R2 alternativa)
 // ================================================================
 
-// ── Detectores de tipo de URL ───────────────────────────────────
-function _isR2Url(url)    { return url && url.includes('r2.dev'); }
-function _isDriveUrl(url) { return url && url.includes('drive.google.com'); }
+// ── Cloudflare R2 — base URL del bucket ─────────────────────────
+// Todas las URLs de video apuntan a este bucket.
+// Formato archivo: nombre-pelicula-2023.mp4 | serie-t01-e02-2023.mp4
+const R2_BASE_URL = 'https://media.iteratio.com/';
 
-// ── Extraer fileId de Drive para construir preview URL ──────────
-function _drivePreviewUrl(url) {
-  if (!_isDriveUrl(url)) return null;
-  let id = null;
-  const pm = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (pm) id = pm[1];
-  const qm = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  if (!id && qm) id = qm[1];
-  if (!id) return null;
-  return `https://drive.google.com/file/d/${id}/preview?rm=minimal&cc_load_policy=0`;
+// ── Detectores de tipo de URL ───────────────────────────────────
+// Acepta: URLs completas de R2 (media.iteratio.com o r2.dev)
+//         y nombres de archivo relativos (se resuelven contra R2_BASE_URL)
+function _isR2Url(url) {
+  if (!url) return false;
+  return url.includes('media.iteratio.com') ||
+         url.includes('r2.dev') ||
+         /^[^/]+\.mp4$/i.test(url.trim()); // nombre de archivo relativo
 }
-function _driveDirectUrl(url) {
-  const pm = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  const id = pm?.[1];
-  return id ? `https://drive.google.com/file/d/${id}/view` : null;
+
+// Resuelve una URL de video: si es relativa la prefija con R2_BASE_URL
+function _resolveVideoUrl(url) {
+  if (!url) return url;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  // Nombre relativo → construir URL completa de R2
+  return R2_BASE_URL + url.trim();
 }
+
+// Retrocompat: Drive ya no se usa — estas funciones retornan null
+function _isDriveUrl(url)    { return false; }
+function _drivePreviewUrl()  { return null; }
+function _driveDirectUrl()   { return null; }
 
 // ── Parsear info de episodio desde URL R2 ──────────────────────
 // Patrón: nombre-serie-t01-e03-2023.mp4
@@ -1535,66 +1543,37 @@ function _itpCheckAirPlay(videoEl) {
 }
 
 // ── openIteratioPlayer(videoUrl, title, epLabel) ─────────────────
-// Punto de entrada principal. Detecta el tipo de URL y actúa:
-//   r2.dev        → Plyr nativo + controles premium
-//   drive.google  → iframe legacy + topbar básico
-//   otras URLs    → <video> nativo sin Plyr
+// Abre el reproductor Iteratio con Plyr sobre Cloudflare R2.
+// Si la URL es relativa, se resuelve contra R2_BASE_URL.
+// La compatibilidad con Google Drive ha sido eliminada.
 function openIteratioPlayer(videoUrl, title, epLabel) {
   const container = _itpEl('iteratioPlayer');
   const videoEl   = _itpEl('iteratioVideo');
-  const iframeEl  = _itpEl('iteratioIframe');
   if (!container || !videoUrl) return;
 
-  // Rellenar títulos antes de mostrar
-  _itpSetTitles(title, videoUrl, epLabel);
+  // Resolver URL relativa → absoluta de R2
+  const resolvedUrl = _resolveVideoUrl(videoUrl);
+
+  _itpSetTitles(title, resolvedUrl, epLabel);
   _itpUpdatePlayIcon(false);
   _itpUpdateProgress();
 
-  if (_isDriveUrl(videoUrl)) {
-    // ── MODO DRIVE (legacy) ────────────────────────────────────
-    _itp.isDriveMode = true;
-    container.classList.add('itp-drive-mode');
+  _itp.isDriveMode = false;
+  container.classList.remove('itp-drive-mode');
 
-    if (videoEl) videoEl.style.display = 'none';
-    if (iframeEl) {
-      iframeEl.src = _drivePreviewUrl(videoUrl);
-      iframeEl.classList.remove('itp-hidden');
-    }
-    _itpShowControls(false);   // topbar siempre visible en modo Drive
-
-  } else {
-    // ── MODO NATIVO: R2 o cualquier otra URL directa ────────────
-    _itp.isDriveMode = false;
-    container.classList.remove('itp-drive-mode');
-
-    if (iframeEl) { iframeEl.src = ''; iframeEl.classList.add('itp-hidden'); }
-
-    if (videoEl) {
-      // Reiniciar el elemento de video sin clonarlo (preserva el ID para _itpEl)
-      videoEl.pause();
-      videoEl.removeAttribute('src');
-      videoEl.load();
-      videoEl.controls  = false;
-      videoEl.style.display = 'block';
-      videoEl.src       = videoUrl;
-      videoEl.preload   = 'metadata';
-
-      _itpCheckAirPlay(videoEl);
-
-      if (_isR2Url(videoUrl)) {
-        // Plyr para URLs R2
-        _itpInitPlyr(videoEl);
-      } else {
-        // <video> nativo para otras URLs directas
-        _itpBindNativeVideo(videoEl);
-        videoEl.load();
-        videoEl.play().then(() => _itpUpdatePlayIcon(true)).catch(() => {});
-      }
-    }
-    _itpShowControls(true);
+  if (videoEl) {
+    videoEl.pause();
+    videoEl.removeAttribute('src');
+    videoEl.load();
+    videoEl.controls      = false;
+    videoEl.style.display = 'block';
+    videoEl.src           = resolvedUrl;
+    videoEl.preload       = 'metadata';
+    _itpCheckAirPlay(videoEl);
+    _itpInitPlyr(videoEl);   // siempre Plyr — R2 es el único proveedor
   }
 
-  // Mostrar el contenedor y forzar landscape fullscreen
+  _itpShowControls(true);
   container.classList.remove('iteratio-player-hidden');
   _itpRequestFullscreen();
 }
@@ -1603,7 +1582,6 @@ function openIteratioPlayer(videoUrl, title, epLabel) {
 function closeIteratioPlayer() {
   const container = _itpEl('iteratioPlayer');
   const videoEl   = _itpEl('iteratioVideo');
-  const iframeEl  = _itpEl('iteratioIframe');
 
   clearTimeout(_itp.hideTimer);
   _itp.isDriveMode = false;
@@ -1618,8 +1596,6 @@ function closeIteratioPlayer() {
     videoEl.load?.();
     videoEl.style.display = 'none';
   }
-  if (iframeEl) { iframeEl.src = ''; iframeEl.classList.add('itp-hidden'); }
-
   if (container) {
     container.classList.add('iteratio-player-hidden');
     container.classList.remove('itp-controls-visible', 'itp-drive-mode');

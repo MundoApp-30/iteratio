@@ -299,8 +299,8 @@
 
 <!-- ============================================================
      ITERATIO PLAYER — Reproductor full-window HBO Max style
-     Modo R2 (Cloudflare): <video> con Plyr + controles premium
-     Modo Drive (legacy):   <iframe> + topbar básico Iteratio
+     Cloudflare R2 + Plyr: controles premium sobre <video> nativo
+     URL base: https://media.iteratio.com/
      ============================================================ -->
 <div id="iteratioPlayer" class="iteratio-player-hidden" aria-label="Reproductor Iteratio">
 
@@ -417,12 +417,6 @@
          playsinline>
   </video>
 
-  <!-- Drive legacy: <iframe> sin controles propios -->
-  <iframe id="iteratioIframe"
-          class="itp-iframe itp-hidden"
-          allowfullscreen
-          allow="autoplay; fullscreen">
-  </iframe>
 
 </div>
 
